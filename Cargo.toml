@@ -1,6 +1,6 @@
 [package]
 name = "v_queue"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["itiu <ValeriyBushenev@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -9,7 +9,7 @@ readme = "README.md"
 repository = "https://github.com/semantic-machines/v-queue"
 
 [lib]
-path = "src/queue/lib.rs"
+path = "src/lib.rs"
 
 [dependencies]
 fs2 = "0.4.3"
