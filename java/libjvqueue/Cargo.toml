@@ -1,0 +1,17 @@
+[package]
+name = "jvqueue"
+version = "0.1.0"
+authors = ["Giovanni Berti <dev.giovanniberti@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+#robusta_jni = "0.0.3"
+robusta_jni = { git = "https://github.com/giovanniberti/robusta.git", rev="479d4d991be2f569a906c4f29df66c8988ee376a"}
+jni = "0.17.0"
+paste = "1.0.0"
+
+v_queue = "0.1.2"
+env_logger = "0.8.2"
