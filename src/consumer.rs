@@ -30,7 +30,7 @@ impl Drop for Consumer {
     fn drop(&mut self) {
         let info_name_lock = self.base_path.to_owned() + "/" + &self.queue.name + "_info_pop_" + &self.name + ".lock";
         if let Err(e) = remove_file(&info_name_lock) {
-            error!("consumer drop: queue:{}:{}:{}, fail remove lock file {}, err={:?}", self.queue.name, self.queue.id, self.name, &info_name_lock, e);
+            error!("[queue:consumer] drop: queue:{}:{}:{}, fail remove lock file {}, err={:?}", self.queue.name, self.queue.id, self.name, &info_name_lock, e);
         }
     }
 }
@@ -65,7 +65,7 @@ impl Consumer {
                                 let processes = system.get_process_list();
 
                                 if let Some(pid) = processes.get(&pid_owner) {
-                                    error!("queue:{}:{}:{} block process, pid={:?}", q.name, q.id, consumer_name, pid);
+                                    error!("[queue:consumer] {}:{}:{} block process, pid={:?}", q.name, q.id, consumer_name, pid);
                                     return Err(ErrorQueue::AlreadyOpen);
                                 }
                             }
@@ -81,7 +81,7 @@ impl Consumer {
                     }
 
                     if lock.write_all(my_pid.to_string().as_bytes()).is_err() {
-                        error!("queue:{}:{}:{} write to lock, pid={}", q.name, q.id, consumer_name, my_pid);
+                        error!("[queue:consumer] {}:{}:{} write to lock, pid={}", q.name, q.id, consumer_name, my_pid);
                         return Err(ErrorQueue::FailWrite);
                     }
                 }
@@ -145,7 +145,7 @@ impl Consumer {
     }
 
     pub fn get_batch_size(&mut self) -> u32 {
-        let delta = self.queue.count_pushed - self.count_popped;
+        let delta: i64 = self.queue.count_pushed as i64 - self.count_popped as i64;
         match delta.cmp(&0) {
             Ordering::Equal => {
                 // if not new messages, read queue info
@@ -159,17 +159,19 @@ impl Consumer {
                 if self.queue.id != self.id {
                     return 1;
                 } else {
-                    return delta;
+                    return delta as u32;
                 }
             }
-            _ => {}
+            Ordering::Less => {
+                return 0;
+            }
         }
         0
     }
 
     pub fn open(&mut self, is_new: bool) -> bool {
         if !self.queue.is_ready {
-            error!("Consumer open: queue not ready, set consumer.ready = false");
+            error!("[queue:consumer] open: queue not ready, set consumer.ready = false");
             self.is_ready = false;
             return false;
         }
@@ -185,7 +187,7 @@ impl Consumer {
         if let Ok(ff) = open_with_option {
             self.ff_info_pop = ff;
         } else {
-            error!("Consumer open: fail open file [{}], set consumer.ready = false", info_pop_file_name);
+            error!("[queue:consumer] open: fail open file [{}], set consumer.ready = false", info_pop_file_name);
             self.is_ready = false;
             return false;
         }
@@ -252,64 +254,89 @@ impl Consumer {
             }
         }
 
-        debug!("consumer ({}): count_pushed:{}, position:{}, id:{}, success:{}", self.name, self.count_popped, self.pos_record, self.id, res);
+        debug!("[queue:consumer] ({}): count_pushed:{}, position:{}, id:{}, success:{}", self.name, self.count_popped, self.pos_record, self.id, res);
         res
     }
 
     pub fn pop_header(&mut self) -> bool {
-        let res = self.read_header();
-
-        if !res {
-            self.sync_and_set_cur_pos();
-        }
-
-        res
-    }
-
-    fn read_header(&mut self) -> bool {
-        if self.count_popped >= self.queue.count_pushed {
-            if let Err(e) = self.queue.get_info_of_part(self.id, false) {
-                error!("{}, queue:consumer({}):pop, queue {}{} not ready", e.as_str(), self.name, self.queue.name, self.id);
-                return false;
-            }
-        }
-
-        if self.count_popped >= self.queue.count_pushed {
-            //info!("@end of part {}, queue.id={}", self.id, self.queue.id);
-
-            if self.queue.id == self.id {
-                self.queue.get_info_queue();
-            }
-
-            if self.queue.id > self.id {
-                while self.id < self.queue.id {
-                    self.id += 1;
-
-                    debug!("prepare next part {}", self.id);
-
-                    if let Err(e) = self.queue.get_info_of_part(self.id, false) {
-                        if e == ErrorQueue::NotFound {
-                            warn!("queue:consumer({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
-                        } else {
-                            error!("queue:consumer({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
+        if let Err(e) = self.read_header() {
+            match e {
+                ErrorQueue::InvalidHeader => {
+                    error!("[queue:consumer] pop_header: invalid header in pos={}, attempt seek next record", self.pos_record);
+                    return self.seek_next_pos();
+                }
+                ErrorQueue::NeedResync => {
+                    self.sync_and_set_cur_pos();
+                    return false;
+                }
+                ErrorQueue::NotReadHeader => {
+                    self.sync_and_set_cur_pos();
+                    if self.read_header().is_err() {
+                        if let Err(e) = self.set_next_part() {
+                            error!("[queue:consumer] set_next_part: err={:?}", e);
                             return false;
                         }
-                    } else {
-                        warn!("use next part {}", self.id);
-                        break;
                     }
                 }
-
-                self.count_popped = 0;
-                self.pos_record = 0;
-
-                self.open(true);
-                self.commit();
-
-                if let Err(e) = self.queue.open_part(self.id) {
-                    error!("queue:consumer({}):pop, queue {}:{}, open part: {}", self.name, self.queue.name, self.id, e.as_str());
+                _ => {
+                    error!("[queue:consumer] pop_header: err={:?}", e);
+                    return false;
                 }
             }
+        }
+
+        true
+    }
+
+    fn set_next_part(&mut self) -> Result<(), ErrorQueue> {
+        //info!("@end of part {}, queue.id={}", self.id, self.queue.id);
+
+        if self.queue.id == self.id {
+            self.queue.get_info_queue();
+        }
+
+        if self.queue.id > self.id {
+            while self.id < self.queue.id {
+                self.id += 1;
+
+                debug!("[queue:consumer] prepare next part {}", self.id);
+
+                if let Err(e) = self.queue.get_info_of_part(self.id, false) {
+                    if e == ErrorQueue::NotFound {
+                        warn!("[queue:consumer]({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
+                    } else {
+                        error!("[queue:consumer]({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
+                        return Err(e);
+                    }
+                } else {
+                    warn!("[queue:consumer] use next part {}", self.id);
+                    break;
+                }
+            }
+
+            self.count_popped = 0;
+            self.pos_record = 0;
+
+            self.open(true);
+            self.commit();
+
+            if let Err(e) = self.queue.open_part(self.id) {
+                error!("[queue:consumer] ({}):pop, queue {}:{}, open part: {}", self.name, self.queue.name, self.id, e.as_str());
+            }
+        }
+        Ok(())
+    }
+
+    fn read_header(&mut self) -> Result<(), ErrorQueue> {
+        if self.count_popped >= self.queue.count_pushed {
+            if let Err(e) = self.queue.get_info_of_part(self.id, false) {
+                error!("[queue:consumer]({}):pop, queue {}{} not ready, err={}", self.name, self.queue.name, self.id, e.as_str());
+                return Err(ErrorQueue::NotReady);
+            }
+        }
+
+        if self.count_popped >= self.queue.count_pushed {
+            self.set_next_part()?;
         }
 
         let mut buf = vec![0; HEADER_SIZE];
@@ -319,26 +346,31 @@ impl Consumer {
                 if len < HEADER_SIZE {
                     //self.is_ready = false;
                     //error!("fail read message header: len={}", len);
-                    return false;
+                    return Err(ErrorQueue::NotReadHeader);
                 }
             }
             Err(_) => {
-                error!("fail read message header");
+                error!("[queue:consumer] fail read message header");
                 //self.is_ready = false;
-                return false;
+                return Err(ErrorQueue::NotReadHeader);
             }
         }
 
         let header = Header::create_from_buf(&buf);
 
-        if header.count_pushed > self.queue.count_pushed {
-            error!("readed header is invalid: record header count_pushed {} > queue count pushed {}", header.count_pushed, self.queue.count_pushed);
-            return false;
+        if header.magic_marker != MAGIC_MARKER {
+            error!("[queue:consumer] header is invalid: not found magic_marker");
+            return Err(ErrorQueue::InvalidHeader);
         }
 
         if header.start_pos >= self.queue.right_edge {
-            error!("readed header is invalid");
-            return false;
+            error!("[queue:consumer] header is invalid: header.start_pos {} > queue.right_edge {}", header.start_pos, self.queue.right_edge);
+            return Err(ErrorQueue::InvalidHeader);
+        }
+
+        if header.count_pushed > self.queue.count_pushed {
+            error!("header is invalid: header.count_pushed {} > queue.count_pushed {}", header.count_pushed, self.queue.count_pushed);
+            return Err(ErrorQueue::NeedResync);
         }
 
         buf[21] = 0;
@@ -350,15 +382,56 @@ impl Consumer {
         self.hash.update(&buf[..]);
 
         self.header = header;
-        true
+        Ok(())
+    }
+
+    pub fn seek_next_pos(&mut self) -> bool {
+        let from = self.header.start_pos + HEADER_SIZE as u64;
+        warn!("[queue:consumer] abnormal situation: seek next record, from pos={}", from);
+        if let Err(e) = self.queue.ff_queue.seek(SeekFrom::Start(from)) {
+            error!("[queue:consumer] fail seek in queue, err={:?}", e);
+            return false;
+        }
+
+        let mut buf = vec![0; 65536];
+        let mut sbi = 0;
+        match self.queue.ff_queue.read(&mut buf[..]) {
+            Ok(_len) => {
+                for (idx, b) in buf.iter().enumerate() {
+                    if *b == MAGIC_MARKER_BYTES[sbi] {
+                        sbi += 1;
+                        if sbi >= 3 {
+                            let new_pos = from + idx as u64 - 14;
+                            if let Err(e) = self.queue.ff_queue.seek(SeekFrom::Start(new_pos)) {
+                                error!("[queue:consumer] fail seek in queue, err={:?}", e);
+                                return false;
+                            }
+                            warn!("[queue:consumer] next record pos={}, delta={}", new_pos, new_pos - self.header.start_pos);
+                            self.pos_record = new_pos;
+                            self.is_ready = true;
+                            self.count_popped += 1;
+                            return true;
+                        }
+                    } else {
+                        sbi = 0;
+                    }
+                }
+                return false;
+            }
+            Err(_) => {
+                error!("[queue:consumer] seek_next_pos: fail to read queue");
+                //self.is_ready = false;
+                return false;
+            }
+        }
     }
 
     fn sync_and_set_cur_pos(&mut self) {
         if let Err(e) = self.queue.ff_queue.sync_data() {
-            error!("fail sync data, err={:?}", e);
+            error!("[queue:consumer] fail sync data, err={:?}", e);
         }
         if let Err(e) = self.queue.ff_queue.seek(SeekFrom::Start(self.pos_record)) {
-            error!("fail seek in queue, err={:?}", e);
+            error!("[queue:consumer] fail seek in queue, err={:?}", e);
         }
     }
 
@@ -370,7 +443,7 @@ impl Consumer {
         if let Ok(readed_size) = self.queue.ff_queue.read(msg) {
             if readed_size != msg.len() {
                 if self.count_popped == self.queue.count_pushed {
-                    warn!("Detected problem with 'Read Tail Message': size fail");
+                    warn!("[queue:consumer] detected problem with 'Read Tail Message': size fail");
 
                     if self.queue.ff_queue.seek(SeekFrom::Start(self.pos_record)).is_ok() {
                         return Err(ErrorQueue::FailReadTailMessage);
@@ -388,14 +461,14 @@ impl Consumer {
 
             if crc32 != self.header.crc {
                 if self.count_popped == self.queue.count_pushed {
-                    warn!("Detected problem with 'Read Tail Message': CRC fail");
+                    warn!("[queue:consumer] detected problem with 'Read Tail Message': CRC fail");
 
                     if self.queue.ff_queue.seek(SeekFrom::Start(self.pos_record)).is_ok() {
                         return Err(ErrorQueue::FailReadTailMessage);
                     }
                 }
 
-                error!("CRC fail, set consumer.ready = false");
+                error!("[queue:consumer] CRC fail, pos={}, record size={}", self.header.start_pos, self.header.msg_length + HEADER_SIZE as u32);
                 self.is_ready = false;
                 return Err(ErrorQueue::InvalidChecksum);
             }
@@ -407,18 +480,18 @@ impl Consumer {
 
     pub fn commit(&mut self) {
         if self.ff_info_pop.seek(SeekFrom::Start(0)).is_err() {
-            error!("fail put info, set consumer.ready = false");
+            error!("[queue:consumer] fail put info, set consumer.ready = false");
             self.is_ready = false;
         }
         if self.ff_info_pop.write(format!("{};{};{};{};{}\n", self.queue.name, self.name, self.pos_record, self.count_popped, self.id).as_bytes()).is_err() {
-            error!("fail put info, set consumer.ready = false");
+            error!("[queue:consumer] fail put info, set consumer.ready = false");
             self.is_ready = false;
         }
     }
 
     pub fn next(&mut self, commit: bool) -> bool {
         if !self.is_ready {
-            error!("commit");
+            error!("[queue:consumer] commit");
             return false;
         }
 

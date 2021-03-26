@@ -1,6 +1,8 @@
 use std::mem::size_of;
 
 pub const HEADER_SIZE: usize = 25;
+pub const MAGIC_MARKER: u32 = 0xEEEF_FEEE;
+pub const MAGIC_MARKER_BYTES: [u8; 4] = [0xEE, 0xFE, 0xEF, 0xEE];
 
 #[derive(PartialEq, Debug)]
 pub enum ErrorQueue {
@@ -13,6 +15,9 @@ pub enum ErrorQueue {
     FailRead = -3,
     NotFound = -2,
     Other = -1,
+    NotReadHeader = -10,
+    InvalidHeader = -11,
+    NeedResync = -12,
 }
 
 #[derive(PartialEq, Copy, Clone)]
@@ -61,6 +66,9 @@ impl ErrorQueue {
             ErrorQueue::NotReady => "not ready",
             ErrorQueue::FailReadTailMessage => "fail read tail message",
             ErrorQueue::InvalidChecksum => "invalid checksum",
+            ErrorQueue::InvalidHeader => "invalid header",
+            ErrorQueue::NeedResync => "need resync",
+            ErrorQueue::NotReadHeader => "not read header",
         }
     }
 }

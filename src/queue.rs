@@ -123,7 +123,7 @@ impl Queue {
         let header = Header {
             start_pos: self.right_edge,
             msg_length: data.len() as u32,
-            magic_marker: 0xEEFE_EFEE,
+            magic_marker: MAGIC_MARKER,
             count_pushed: self.count_pushed + 1,
             crc: 0,
             msg_type: in_msg_type,
