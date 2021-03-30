@@ -145,7 +145,7 @@ impl Consumer {
     }
 
     pub fn get_batch_size(&mut self) -> u32 {
-        let delta: i64 = self.queue.count_pushed as i64 - self.count_popped as i64;
+        let delta = self.queue.count_pushed - self.count_popped;
         match delta.cmp(&0) {
             Ordering::Equal => {
                 // if not new messages, read queue info
@@ -159,7 +159,7 @@ impl Consumer {
                 if self.queue.id != self.id {
                     return 1;
                 } else {
-                    return delta as u32;
+                    return delta;
                 }
             }
             Ordering::Less => {
@@ -262,8 +262,10 @@ impl Consumer {
         if let Err(e) = self.read_header() {
             match e {
                 ErrorQueue::InvalidHeader => {
-                    error!("[queue:consumer] pop_header: invalid header in pos={}, attempt seek next record", self.pos_record);
-                    return self.seek_next_pos();
+                    //error!("[queue:consumer] pop_header: invalid header in pos={}, attempt seek next record", self.pos_record);
+                    //return self.seek_next_pos();
+                    self.sync_and_set_cur_pos();
+                    return false;
                 }
                 ErrorQueue::NeedResync => {
                     self.sync_and_set_cur_pos();
@@ -286,45 +288,6 @@ impl Consumer {
         }
 
         true
-    }
-
-    fn set_next_part(&mut self) -> Result<(), ErrorQueue> {
-        //info!("@end of part {}, queue.id={}", self.id, self.queue.id);
-
-        if self.queue.id == self.id {
-            self.queue.get_info_queue();
-        }
-
-        if self.queue.id > self.id {
-            while self.id < self.queue.id {
-                self.id += 1;
-
-                debug!("[queue:consumer] prepare next part {}", self.id);
-
-                if let Err(e) = self.queue.get_info_of_part(self.id, false) {
-                    if e == ErrorQueue::NotFound {
-                        warn!("[queue:consumer]({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
-                    } else {
-                        error!("[queue:consumer]({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
-                        return Err(e);
-                    }
-                } else {
-                    warn!("[queue:consumer] use next part {}", self.id);
-                    break;
-                }
-            }
-
-            self.count_popped = 0;
-            self.pos_record = 0;
-
-            self.open(true);
-            self.commit();
-
-            if let Err(e) = self.queue.open_part(self.id) {
-                error!("[queue:consumer] ({}):pop, queue {}:{}, open part: {}", self.name, self.queue.name, self.id, e.as_str());
-            }
-        }
-        Ok(())
     }
 
     fn read_header(&mut self) -> Result<(), ErrorQueue> {
@@ -449,7 +412,7 @@ impl Consumer {
                         return Err(ErrorQueue::FailReadTailMessage);
                     }
                 }
-                return Err(ErrorQueue::FailRead);
+                return Err(ErrorQueue::QueueIsEmpty);
             }
 
             //debug!("msg={:?}", msg);
@@ -474,7 +437,7 @@ impl Consumer {
             }
             Ok(readed_size)
         } else {
-            Err(ErrorQueue::FailRead)
+            Err(ErrorQueue::NotRead)
         }
     }
 
@@ -514,5 +477,44 @@ impl Consumer {
 
     pub fn commit_and_next(&mut self) -> bool {
         self.next(true)
+    }
+
+    fn set_next_part(&mut self) -> Result<(), ErrorQueue> {
+        //info!("@end of part {}, queue.id={}", self.id, self.queue.id);
+
+        if self.queue.id == self.id {
+            self.queue.get_info_queue();
+        }
+
+        if self.queue.id > self.id {
+            while self.id < self.queue.id {
+                self.id += 1;
+
+                debug!("[queue:consumer] prepare next part {}", self.id);
+
+                if let Err(e) = self.queue.get_info_of_part(self.id, false) {
+                    if e == ErrorQueue::NotFound {
+                        warn!("[queue:consumer]({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
+                    } else {
+                        error!("[queue:consumer]({}):pop, queue {}:{} {}", self.name, self.queue.name, self.id, e.as_str());
+                        return Err(e);
+                    }
+                } else {
+                    warn!("[queue:consumer] use next part {}", self.id);
+                    break;
+                }
+            }
+
+            self.count_popped = 0;
+            self.pos_record = 0;
+
+            self.open(true);
+            self.commit();
+
+            if let Err(e) = self.queue.open_part(self.id) {
+                error!("[queue:consumer] ({}):pop, queue {}:{}, open part: {}", self.name, self.queue.name, self.id, e.as_str());
+            }
+        }
+        Ok(())
     }
 }
