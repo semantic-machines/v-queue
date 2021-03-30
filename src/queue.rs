@@ -311,7 +311,7 @@ impl Queue {
         let mut count_pushed = 0;
 
         if self.ff_info_push.seek(SeekFrom::Start(0)).is_err() {
-            return Err(ErrorQueue::NotRead);
+            return Err(ErrorQueue::FailRead);
         }
 
         if let Some(line) = BufReader::new(&self.ff_info_push).lines().next() {

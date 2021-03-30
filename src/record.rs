@@ -12,13 +12,9 @@ pub enum ErrorQueue {
     InvalidChecksum = -6,
     FailReadTailMessage = -5,
     FailOpen = -4,
-    NotRead = -3,
+    FailRead = -3,
     NotFound = -2,
     Other = -1,
-    NotReadHeader = -10,
-    InvalidHeader = -11,
-    NeedResync = -12,
-    QueueIsEmpty = -13,
 }
 
 #[derive(PartialEq, Copy, Clone)]
@@ -62,15 +58,11 @@ impl ErrorQueue {
             ErrorQueue::Other => "other error",
             ErrorQueue::AlreadyOpen => "already open",
             ErrorQueue::FailOpen => "fail open",
-            ErrorQueue::NotRead => "not read",
+            ErrorQueue::FailRead => "fail read",
             ErrorQueue::FailWrite => "fail write",
             ErrorQueue::NotReady => "not ready",
             ErrorQueue::FailReadTailMessage => "fail read tail message",
             ErrorQueue::InvalidChecksum => "invalid checksum",
-            ErrorQueue::InvalidHeader => "invalid header",
-            ErrorQueue::NeedResync => "need resync",
-            ErrorQueue::NotReadHeader => "not read header",
-            ErrorQueue::QueueIsEmpty => "queue is empty",
         }
     }
 }
