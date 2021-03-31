@@ -335,12 +335,17 @@ impl Consumer {
         let header = Header::create_from_buf(&buf);
 
         if header.count_pushed > self.queue.count_pushed {
-            error!("[queue:consumer] readed header is invalid: record header count_pushed {} > queue count pushed {}", header.count_pushed, self.queue.count_pushed);
+            if header.magic_marker != MAGIC_MARKER {
+                error!("[queue:consumer] header is invalid: not found magic marker");
+                self.seek_next_pos();
+            } else {
+                error!("[queue:consumer] header is invalid: record header count_pushed {} > queue count pushed {}", header.count_pushed, self.queue.count_pushed);
+            }
             return false;
         }
 
         if header.start_pos >= self.queue.right_edge {
-            error!("[queue:consumer] readed header is invalid");
+            error!("[queue:consumer] header is invalid");
             return false;
         }
 
