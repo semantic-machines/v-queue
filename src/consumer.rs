@@ -145,6 +145,9 @@ impl Consumer {
     }
 
     pub fn get_batch_size(&mut self) -> u32 {
+        if self.queue.count_pushed < self.count_popped {
+            return 0;
+        }
         let delta = self.queue.count_pushed - self.count_popped;
         match delta.cmp(&0) {
             Ordering::Equal => {
