@@ -257,8 +257,6 @@ impl Queue {
     }
 
     pub fn get_info_queue(&mut self) -> bool {
-        let mut res = false;
-
         let mut id = 0;
 
         if self.ff_info_queue.seek(SeekFrom::Start(0)).is_err() {
@@ -266,37 +264,28 @@ impl Queue {
         }
 
         if let Some(line) = BufReader::new(&self.ff_info_queue).lines().next() {
-            res = true;
             if let Ok(ll) = line {
-                let (queue_name, _id, _crc) = scan_fmt!(&ll, "{};{};{}", String, u32, String);
-
-                match queue_name {
-                    Some(q) => {
-                        if q != self.name {
-                            res = false;
-                        }
+                if let Ok((queue_name, _id, _crc)) = scan_fmt!(&ll, "{};{};{}", String, u32, String) {
+                    if queue_name != self.name {
+                        return false;
                     }
-                    None => res = false,
-                }
 
-                match _id {
-                    Some(q) => id = q,
-                    None => res = false,
+                    id = _id;
                 }
             } else {
                 return false;
             }
+        } else {
+            return false;
         }
 
-        if res {
-            self.id = id;
-            self.right_edge = 0;
-            self.count_pushed = 0;
-        }
+        self.id = id;
+        self.right_edge = 0;
+        self.count_pushed = 0;
 
         //info!("@ read info_queue: name={}, id={}", self.name, self.id);
 
-        res
+        true
     }
 
     pub fn get_info_of_part(&mut self, part_id: u32, reopen: bool) -> Result<(), ErrorQueue> {
@@ -306,7 +295,6 @@ impl Queue {
             }
         }
 
-        let mut res = true;
         let mut right_edge = 0;
         let mut count_pushed = 0;
 
@@ -316,39 +304,25 @@ impl Queue {
 
         if let Some(line) = BufReader::new(&self.ff_info_push).lines().next() {
             if let Ok(ll) = line {
-                let (queue_name, position, pushed, _crc) = scan_fmt!(&ll, "{};{};{};{}", String, u64, u32, String);
-
-                match queue_name {
-                    Some(q) => {
-                        if q != self.name {
-                            res = false;
-                        }
+                if let Ok((queue_name, position, pushed, _crc)) = scan_fmt!(&ll, "{};{};{};{}", String, u64, u32, String) {
+                    if queue_name != self.name {
+                        return Err(ErrorQueue::Other);
                     }
-                    None => res = false,
-                }
 
-                match position {
-                    Some(q) => right_edge = q,
-                    None => res = false,
-                }
-
-                match pushed {
-                    Some(q) => count_pushed = q,
-                    None => res = false,
+                    right_edge = position;
+                    count_pushed = pushed;
+                } else {
+                    return Err(ErrorQueue::Other);
                 }
             } else {
                 return Err(ErrorQueue::Other);
             }
         }
 
-        if res {
-            self.right_edge = right_edge;
-            self.count_pushed = count_pushed;
-            return Ok(());
-        }
+        self.right_edge = right_edge;
+        self.count_pushed = count_pushed;
 
         //info!("queue ({}): count_pushed:{}, right_edge:{}, id:{}, ready:{}", self.name, self.count_pushed, self.right_edge, self.id, self.is_ready);
-
-        Err(ErrorQueue::Other)
+        return Ok(());
     }
 }
