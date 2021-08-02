@@ -28,9 +28,11 @@ pub struct Consumer {
 
 impl Drop for Consumer {
     fn drop(&mut self) {
-        let info_name_lock = self.base_path.to_owned() + "/" + &self.queue.name + "_info_pop_" + &self.name + ".lock";
-        if let Err(e) = remove_file(&info_name_lock) {
-            error!("[queue:consumer] drop: queue:{}:{}:{}, fail remove lock file {}, err={:?}", self.queue.name, self.queue.id, self.name, &info_name_lock, e);
+        if self.mode != Mode::Read {
+            let info_name_lock = self.base_path.to_owned() + "/" + &self.queue.name + "_info_pop_" + &self.name + ".lock";
+            if let Err(e) = remove_file(&info_name_lock) {
+                error!("[queue:consumer] drop: queue:{}:{}:{}, fail remove lock file {}, err={:?}", self.queue.name, self.queue.id, self.name, &info_name_lock, e);
+            }
         }
     }
 }
