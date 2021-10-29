@@ -1,13 +1,12 @@
 use crate::queue::*;
 use crate::record::*;
 use crc32fast::Hasher;
+use fs2::FileExt;
 use std::cmp::Ordering;
 use std::fs::*;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::io::{BufRead, BufReader};
-use std::process;
-use sysinfo::SystemExt;
 
 pub struct Consumer {
     mode: Mode,
@@ -49,42 +48,18 @@ impl Consumer {
             Ok(q) => {
                 if mode == Mode::ReadWrite {
                     let info_name_lock = base_path.to_owned() + "/" + queue_name + "_info_pop_" + consumer_name + ".lock";
-                    let wlock = OpenOptions::new().read(true).write(true).create(true).open(info_name_lock);
 
-                    if wlock.is_err() {
-                        return Err(ErrorQueue::NotReady);
-                    }
-
-                    let mut lock = wlock.unwrap();
-
-                    let my_pid = process::id();
-
-                    if let Some(line) = BufReader::new(&lock).lines().next() {
-                        if let Ok(ll) = line {
-                            if let Ok(pid_owner) = scan_fmt!(&ll, "{}", i32) {
-                                let mut system = sysinfo::System::new();
-                                system.refresh_all();
-                                let processes = system.processes();
-
-                                if let Some(pid) = processes.get(&pid_owner) {
-                                    error!("[queue:consumer] {}:{}:{} block process, pid={:?}", q.name, q.id, consumer_name, pid);
-                                    return Err(ErrorQueue::AlreadyOpen);
-                                }
+                    match OpenOptions::new().read(true).write(true).create(true).open(info_name_lock) {
+                        Ok(file) => {
+                            if let Err(e) = file.lock_exclusive() {
+                                error!("consumer:{} attempt lock, err={}", consumer_name, e);
+                                return Err(ErrorQueue::AlreadyOpen);
                             }
                         }
-                    }
-
-                    if lock.set_len(0).is_err() {
-                        return Err(ErrorQueue::NotReady);
-                    }
-
-                    if lock.seek(SeekFrom::Start(0)).is_err() {
-                        return Err(ErrorQueue::NotReady);
-                    }
-
-                    if lock.write_all(my_pid.to_string().as_bytes()).is_err() {
-                        error!("[queue:consumer] {}:{}:{} write to lock, pid={}", q.name, q.id, consumer_name, my_pid);
-                        return Err(ErrorQueue::FailWrite);
+                        Err(e) => {
+                            error!("consumer:{} prepare lock, err={}", consumer_name, e);
+                            return Err(ErrorQueue::FailOpen);
+                        }
                     }
                 }
 
