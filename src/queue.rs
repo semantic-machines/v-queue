@@ -65,11 +65,11 @@ impl Queue {
                             error!("queue:{}:{} attempt lock, err={}", queue.name, queue.id, e);
                             return Err(ErrorQueue::AlreadyOpen);
                         }
-                    }
+                    },
                     Err(e) => {
                         error!("queue:{}:{} prepare lock, err={}", queue.name, queue.id, e);
                         return Err(ErrorQueue::FailOpen);
-                    }
+                    },
                 }
 
                 if info_is_ok {

@@ -55,11 +55,11 @@ impl Consumer {
                                 error!("consumer:{} attempt lock, err={}", consumer_name, e);
                                 return Err(ErrorQueue::AlreadyOpen);
                             }
-                        }
+                        },
                         Err(e) => {
                             error!("consumer:{} prepare lock, err={}", consumer_name, e);
                             return Err(ErrorQueue::FailOpen);
-                        }
+                        },
                     }
                 }
 
@@ -116,33 +116,48 @@ impl Consumer {
                     }),
                     Err(_e) => Err(ErrorQueue::NotReady),
                 }
-            }
+            },
             Err(_e) => Err(ErrorQueue::NotReady),
         }
     }
 
     pub fn get_batch_size(&mut self) -> u32 {
+        self.get_batch_size_l(0)
+    }
+
+    fn get_batch_size_l(&mut self, level: u16) -> u32 {
         if self.queue.count_pushed < self.count_popped {
             return 0;
         }
+
         let delta = self.queue.count_pushed - self.count_popped;
+        //eprintln!("get_batch_size queue.count_pushed={}, count_popped={}", self.queue.count_pushed, self.count_popped);
+        //eprintln!("delta={}", delta);
         match delta.cmp(&0) {
             Ordering::Equal => {
                 // if not new messages, read queue info
                 self.queue.get_info_queue();
 
                 if self.queue.id > self.id {
-                    return 1;
+                    if level == 0 && self.go_to_next_part() {
+                        return self.get_batch_size_l(level + 1);
+                    }
+
+                    return 0;
                 }
-            }
+            },
             Ordering::Greater => {
                 if self.queue.id != self.id {
-                    return 1;
+                    if level == 0 && self.go_to_next_part() {
+                        return self.get_batch_size_l(level + 1);
+                    }
+
+                    return 0;
                 } else {
                     return delta;
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
         0
     }
@@ -215,7 +230,7 @@ impl Consumer {
         res
     }
 
-    fn read_header(&mut self) -> bool {
+    pub fn go_to_next_part(&mut self) -> bool {
         if self.count_popped >= self.queue.count_pushed {
             if let Err(e) = self.queue.get_info_of_part(self.id, false) {
                 error!("{}, queue:consumer({}):pop, queue {}{} not ready", e.as_str(), self.name, self.queue.name, self.id);
@@ -258,9 +273,14 @@ impl Consumer {
                 if let Err(e) = self.queue.open_part(self.id) {
                     error!("queue:consumer({}):pop, queue {}:{}, open part: {}", self.name, self.queue.name, self.id, e.as_str());
                 }
+                return true;
             }
         }
+        false
+    }
 
+    fn read_header(&mut self) -> bool {
+        self.go_to_next_part();
         let mut buf = vec![0; HEADER_SIZE];
         match self.queue.ff_queue.read(&mut buf[..]) {
             Ok(len) => {
@@ -270,12 +290,12 @@ impl Consumer {
                     //error!("fail read message header: len={}", len);
                     return false;
                 }
-            }
+            },
             Err(_) => {
                 error!("[queue:consumer] fail read message header");
                 //self.is_ready = false;
                 return false;
-            }
+            },
         }
 
         let header = Header::create_from_buf(&buf);
@@ -339,12 +359,12 @@ impl Consumer {
                     }
                 }
                 return false;
-            }
+            },
             Err(_) => {
                 error!("[queue:consumer] seek_next_pos: fail to read queue");
                 //self.is_ready = false;
                 return false;
-            }
+            },
         }
     }
 
