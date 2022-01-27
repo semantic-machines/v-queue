@@ -422,7 +422,7 @@ impl Consumer {
         }
     }
 
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self) -> bool {
         if self.ff_info_pop.seek(SeekFrom::Start(0)).is_err() {
             error!("[queue:consumer] fail put info, set consumer.ready = false");
             self.is_ready = false;
@@ -431,6 +431,7 @@ impl Consumer {
             error!("[queue:consumer] fail put info, set consumer.ready = false");
             self.is_ready = false;
         }
+        self.is_ready
     }
 
 }
