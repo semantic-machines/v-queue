@@ -147,14 +147,14 @@ impl Consumer {
                 }
             },
             Ordering::Greater => {
-                if self.queue.id != self.id {
+                return if self.queue.id != self.id {
                     if level == 0 && self.go_to_next_part() {
                         return self.get_batch_size_l(level + 1);
                     }
 
-                    return 0;
+                    0
                 } else {
-                    return delta;
+                    delta
                 }
             },
             _ => {},
@@ -414,6 +414,8 @@ impl Consumer {
                 self.is_ready = false;
                 return Err(ErrorQueue::InvalidChecksum);
             }
+            self.count_popped += 1;
+
             Ok(readed_size)
         } else {
             Err(ErrorQueue::FailRead)
@@ -431,30 +433,4 @@ impl Consumer {
         }
     }
 
-    pub fn next(&mut self, commit: bool) -> bool {
-        if !self.is_ready {
-            error!("[queue:consumer] commit");
-            return false;
-        }
-
-        self.count_popped += 1;
-
-        if commit {
-            if self.ff_info_pop.seek(SeekFrom::Start(0)).is_err() {
-                return false;
-            }
-
-            if self.ff_info_pop.write(format!("{};{};{};{};{}\n", self.queue.name, self.name, self.pos_record, self.count_popped, self.id).as_bytes()).is_ok() {
-                return true;
-            };
-
-            return false;
-        }
-
-        true
-    }
-
-    pub fn commit_and_next(&mut self) -> bool {
-        self.next(true)
-    }
 }
