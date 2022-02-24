@@ -147,7 +147,7 @@ impl Queue {
             error!("queue:{}:{} push, write header, err={}", self.name, self.id, e);
             return Err(ErrorQueue::FailWrite);
         }
-        if let Err(e) = self.ff_queue.write(&data) {
+        if let Err(e) = self.ff_queue.write(data) {
             error!("queue:{}:{} push, write body, err={}", self.name, self.id, e);
             return Err(ErrorQueue::FailWrite);
         }
@@ -263,17 +263,13 @@ impl Queue {
             return false;
         }
 
-        if let Some(line) = BufReader::new(&self.ff_info_queue).lines().next() {
-            if let Ok(ll) = line {
-                if let Ok((queue_name, _id, _crc)) = scan_fmt!(&ll, "{};{};{}", String, u32, String) {
-                    if queue_name != self.name {
-                        return false;
-                    }
-
-                    id = _id;
+        if let Some(Ok(ll)) = BufReader::new(&self.ff_info_queue).lines().next() {
+            if let Ok((queue_name, _id, _crc)) = scan_fmt!(&ll, "{};{};{}", String, u32, String) {
+                if queue_name != self.name {
+                    return false;
                 }
-            } else {
-                return false;
+
+                id = _id;
             }
         } else {
             return false;
@@ -323,6 +319,6 @@ impl Queue {
         self.count_pushed = count_pushed;
 
         //info!("queue ({}): count_pushed:{}, right_edge:{}, id:{}, ready:{}", self.name, self.count_pushed, self.right_edge, self.id, self.is_ready);
-        return Ok(());
+        Ok(())
     }
 }

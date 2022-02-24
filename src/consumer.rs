@@ -358,12 +358,12 @@ impl Consumer {
                         sbi = 0;
                     }
                 }
-                return false;
+                false
             },
             Err(_) => {
                 error!("[queue:consumer] seek_next_pos: fail to read queue");
                 //self.is_ready = false;
-                return false;
+                false
             },
         }
     }
@@ -433,5 +433,4 @@ impl Consumer {
         }
         self.is_ready
     }
-
 }
