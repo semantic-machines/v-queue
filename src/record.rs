@@ -17,7 +17,7 @@ pub enum ErrorQueue {
     Other = -1,
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Mode {
     Read = 0,
     ReadWrite = 1,

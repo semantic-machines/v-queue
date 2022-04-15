@@ -382,8 +382,8 @@ impl Consumer {
             return Err(ErrorQueue::NotReady);
         }
 
-        if let Ok(readed_size) = self.queue.ff_queue.read(msg) {
-            if readed_size != msg.len() {
+        if let Ok(readied_size) = self.queue.ff_queue.read(msg) {
+            if readied_size != msg.len() {
                 if self.count_popped == self.queue.count_pushed {
                     warn!("[queue:consumer] detected problem with 'Read Tail Message': size fail");
 
@@ -396,7 +396,7 @@ impl Consumer {
 
             //debug!("msg={:?}", msg);
 
-            self.pos_record = self.pos_record + HEADER_SIZE as u64 + readed_size as u64;
+            self.pos_record = self.pos_record + HEADER_SIZE as u64 + readied_size as u64;
             self.hash.update(msg);
 
             let crc32: u32 = self.hash.clone().finalize();
@@ -416,7 +416,7 @@ impl Consumer {
             }
             self.count_popped += 1;
 
-            Ok(readed_size)
+            Ok(readied_size)
         } else {
             Err(ErrorQueue::FailRead)
         }

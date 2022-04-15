@@ -23,7 +23,7 @@ pub struct Queue {
 impl Queue {
     pub fn new(base_path: &str, queue_name: &str, in_mode: Mode) -> Result<Queue, ErrorQueue> {
         if !Path::new(&base_path).exists() {
-            if let Err(e) = create_dir_all(base_path.to_owned()) {
+            if let Err(e) = create_dir_all(base_path) {
                 error!("queue:{} create path, err={}", queue_name, e);
                 return Err(ErrorQueue::FailWrite);
             }
@@ -209,17 +209,18 @@ impl Queue {
         let ipp = self.base_path.to_owned() + "/" + &self.name + "-" + &part_id.to_string() + "/" + &self.name + "_info_push";
 
         let ffiq = if self.mode == Mode::ReadWrite {
-            OpenOptions::new().read(true).write(true).create(true).open(ipp)
+            OpenOptions::new().read(true).write(true).create(true).open(&ipp)
         } else {
-            OpenOptions::new().read(true).open(ipp)
+            OpenOptions::new().read(true).open(&ipp)
         };
 
-        if let Ok(ff) = ffiq {
-            self.ff_info_push = ff;
-        } else {
-            error!("[{}] fail open info push, part {}", self.name, part_id);
-            self.is_ready = false;
-            return Err(ErrorQueue::FailOpen);
+        match ffiq {
+            Ok(ff) => self.ff_info_push = ff,
+            Err(e) => {
+                debug!("[{}] fail open info push, part {}, mode={:?}, err={:?} {}", self.name, part_id, self.mode, e, ipp);
+                self.is_ready = false;
+                return Err(ErrorQueue::FailOpen);
+            },
         }
 
         Ok(())
@@ -244,7 +245,7 @@ impl Queue {
         if let Ok(f) = ffq {
             self.ff_queue = f;
         } else {
-            error!("[{}] fail open part {}", self.name, part_id);
+            debug!("[{}] fail open part {}", self.name, part_id);
             self.is_ready = false;
             return Err(ErrorQueue::FailOpen);
         }
