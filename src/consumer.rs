@@ -279,8 +279,19 @@ impl Consumer {
         false
     }
 
+    fn is_empty_part(&mut self) -> bool {
+        self.queue.count_pushed == 0
+    }
+
     fn read_header(&mut self) -> bool {
-        self.go_to_next_part();
+        if self.go_to_next_part() {
+            while self.is_empty_part() {
+                if !self.go_to_next_part() {
+                    break;
+                }
+            }
+        }
+
         let mut buf = vec![0; HEADER_SIZE];
         match self.queue.ff_queue.read(&mut buf[..]) {
             Ok(len) => {
