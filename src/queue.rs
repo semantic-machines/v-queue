@@ -231,9 +231,7 @@ impl Queue {
             return Err(ErrorQueue::NotReady);
         }
 
-        if let Err(e) = self.open_info_push(part_id) {
-            return Err(e);
-        }
+        self.open_info_push(part_id)?;
 
         let qpp = self.base_path.to_owned() + "/" + &self.name + "-" + &part_id.to_string() + "/" + &self.name + "_queue";
         let ffq = if self.mode == Mode::ReadWrite {
@@ -287,9 +285,7 @@ impl Queue {
 
     pub fn get_info_of_part(&mut self, part_id: u32, reopen: bool) -> Result<(), ErrorQueue> {
         if self.id != part_id || reopen {
-            if let Err(e) = self.open_info_push(part_id) {
-                return Err(e);
-            }
+            self.open_info_push(part_id)?;
         }
 
         let mut right_edge = 0;
