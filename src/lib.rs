@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 extern crate fs2;
 
 extern crate crc32fast;
