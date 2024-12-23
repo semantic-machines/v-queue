@@ -7,6 +7,7 @@ use std::fs::*;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 pub struct Consumer {
     mode: Mode,
@@ -42,7 +43,8 @@ impl Consumer {
     }
 
     pub fn new_with_mode(base_path: &str, consumer_name: &str, queue_name: &str, mode: Mode) -> Result<Consumer, ErrorQueue> {
-        let info_name = base_path.to_owned() + "/" + queue_name + "_info_pop_" + consumer_name;
+        let info_name = base_path.to_owned() + "/individuals-flow_info_pop_" + consumer_name;
+        let exists = Path::new(&info_name).exists();
 
         match Queue::new(base_path, queue_name, Mode::Read) {
             Ok(mut q) => {
@@ -75,7 +77,6 @@ impl Consumer {
 
                 match open_with_option {
                     Ok(ff) => {
-                        // Create consumer with queue's current ID
                         let mut consumer = Consumer {
                             mode,
                             is_ready: true,
@@ -97,25 +98,15 @@ impl Consumer {
                             id: 0,
                         };
 
-                        if consumer.get_info() {
-                            // Existing consumer - use saved position
+                        if exists && consumer.get_info() {
+                            // Существующий консьюмер - используем сохраненную позицию
                             if consumer.queue.open_part(consumer.id).is_ok() {
                                 if consumer.queue.ff_queue.seek(SeekFrom::Start(consumer.pos_record)).is_err() {
                                     return Err(ErrorQueue::NotReady);
                                 }
-                            } else {
-                                consumer.queue.is_ready = true;
-                                consumer.id = consumer.queue.id;
-                                if consumer.queue.open_part(consumer.id).is_ok() {
-                                    if consumer.queue.ff_queue.seek(SeekFrom::Start(consumer.pos_record)).is_err() {
-                                        return Err(ErrorQueue::NotReady);
-                                    }
-                                } else {
-                                    return Err(ErrorQueue::NotReady);
-                                }
                             }
                         } else {
-                            // New consumer - start at current queue part
+                            // Новый консьюмер - начинаем с текущей части
                             consumer.id = consumer.queue.id;
                             consumer.pos_record = 0;
                             consumer.count_popped = 0;
@@ -124,7 +115,6 @@ impl Consumer {
                                 return Err(ErrorQueue::NotReady);
                             }
 
-                            // Write initial state
                             consumer.open(true);
                             if !consumer.commit() {
                                 return Err(ErrorQueue::NotReady);
