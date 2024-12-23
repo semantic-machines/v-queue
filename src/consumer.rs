@@ -45,7 +45,11 @@ impl Consumer {
         let info_name = base_path.to_owned() + "/" + queue_name + "_info_pop_" + consumer_name;
 
         match Queue::new(base_path, queue_name, Mode::Read) {
-            Ok(q) => {
+            Ok(mut q) => {
+                if !q.get_info_queue() {
+                    return Err(ErrorQueue::NotReady);
+                }
+
                 if mode == Mode::ReadWrite {
                     let info_name_lock = base_path.to_owned() + "/" + queue_name + "_info_pop_" + consumer_name + ".lock";
 
@@ -64,13 +68,14 @@ impl Consumer {
                 }
 
                 let open_with_option = if mode == Mode::ReadWrite {
-                    OpenOptions::new().read(true).write(true).create(true).open(info_name)
+                    OpenOptions::new().read(true).write(true).create(true).open(&info_name)
                 } else {
-                    OpenOptions::new().read(true).open(info_name)
+                    OpenOptions::new().read(true).open(&info_name)
                 };
 
                 match open_with_option {
-                    Ok(ff) => Ok({
+                    Ok(ff) => {
+                        // Create consumer with queue's current ID
                         let mut consumer = Consumer {
                             mode,
                             is_ready: true,
@@ -93,6 +98,7 @@ impl Consumer {
                         };
 
                         if consumer.get_info() {
+                            // Existing consumer - use saved position
                             if consumer.queue.open_part(consumer.id).is_ok() {
                                 if consumer.queue.ff_queue.seek(SeekFrom::Start(consumer.pos_record)).is_err() {
                                     return Err(ErrorQueue::NotReady);
@@ -109,11 +115,24 @@ impl Consumer {
                                 }
                             }
                         } else {
-                            return Err(ErrorQueue::NotReady);
+                            // New consumer - start at current queue part
+                            consumer.id = consumer.queue.id;
+                            consumer.pos_record = 0;
+                            consumer.count_popped = 0;
+
+                            if consumer.queue.open_part(consumer.id).is_err() {
+                                return Err(ErrorQueue::NotReady);
+                            }
+
+                            // Write initial state
+                            consumer.open(true);
+                            if !consumer.commit() {
+                                return Err(ErrorQueue::NotReady);
+                            }
                         }
 
-                        consumer
-                    }),
+                        Ok(consumer)
+                    },
                     Err(_e) => Err(ErrorQueue::NotReady),
                 }
             },
